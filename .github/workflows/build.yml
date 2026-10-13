@@ -1,0 +1,60 @@
+name: Build MERSAL Driver APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "mersal_driver.zip"
+      - ".github/workflows/build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Unpack project
+        run: unzip -q mersal_driver.zip -d src
+
+      - name: Generate Android scaffold
+        run: flutter create --org com.mersal --project-name mersal_driver --platforms android app
+
+      - name: Apply our code
+        run: |
+          rm -rf app/lib app/test
+          cp -r src/lib app/lib
+          cp src/pubspec.yaml app/pubspec.yaml
+          cp src/mersal-driver.jks app/android/app/mersal-driver.jks
+          python3 src/scripts/patch_android.py app
+
+      - name: Build release APK
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mersal-driver-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish APK as a release (easy download from phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: driver-build-${{ github.run_number }}
+          name: Driver build ${{ github.run_number }}
+          files: app/build/app/outputs/flutter-apk/app-release.apk
